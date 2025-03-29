@@ -218,30 +218,24 @@ bot.action("confirm_order", async (ctx) => {
     const sheet = doc.sheetsByTitle[sheetTitle];
     if (!sheet) return ctx.reply(`Не знайдено листа "${sheetTitle}".`);
 
-    await sheet.loadHeaderRow();
-    const rows = await sheet.getRows();
-    const emptyRow = rows.find(r => !r['Товар'] || r['Товар'].toString().trim() === '');
-
-    if (!emptyRow) return ctx.reply("Немає вільного рядка для додавання.");
-
     const today = new Date();
     const deadline = new Date(today);
     deadline.setDate(deadline.getDate() + 5);
     const diffDays = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
 
-    emptyRow['Товар'] = data.product;
-    emptyRow['Розмір'] = data.size;
-    emptyRow['Тканина'] = data.material;
-    emptyRow['Тип оплати'] = data.payment;
-    emptyRow['Дані для відправки'] = data.delivery;
-    emptyRow['Посилання'] = data.link;
-    emptyRow['Сума'] = data.amount;
-    emptyRow['Дата оформлення'] = today.toLocaleDateString("uk-UA");
-    emptyRow['Крайня дата'] = deadline.toLocaleDateString("uk-UA");
-    emptyRow['Залишилось днів'] = diffDays;
-    emptyRow['Статус'] = 'Нове замовлення';
-
-    await emptyRow.save();
+    await sheet.addRow({
+      "Товар": data.product,
+      "Розмір": data.size,
+      "Тканина": data.material,
+      "Тип оплати": data.payment,
+      "Дані для відправки": data.delivery,
+      "Посилання": data.link,
+      "Сума": data.amount,
+      "Дата оформлення": today.toLocaleDateString("uk-UA"),
+      "Крайня дата": deadline.toLocaleDateString("uk-UA"),
+      "Залишилось днів": diffDays,
+      "Статус": "Нове замовлення"
+    });
 
     delete userOrderData[ctx.from.id];
     await ctx.reply("✅ Замовлення успішно додано!");
