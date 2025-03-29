@@ -112,6 +112,7 @@ bot.hears("/start", async (ctx) => {
 });
 
 bot.on("message", async (ctx) => {
+  if (userOrderData[ctx.from.id] && !userOrderData[ctx.from.id].completed) return;
   try {
     await sendMenu(ctx);
   } catch (err) {
@@ -172,58 +173,48 @@ bot.action("overdue", async (ctx) => {
 
 bot.action("new_order", async (ctx) => {
   ctx.answerCbQuery();
-  userOrderData[ctx.from.id] = {};
+  userOrderData[ctx.from.id] = { step: 1, completed: false };
   await ctx.reply("✏️ Введіть назву товару:");
-  bot.on("text", async (ctx2) => {
-    const data = userOrderData[ctx2.from.id];
-    if (!data) return;
+});
 
-    if (!data.product) {
-      data.product = ctx2.message.text;
-      await ctx2.reply("📏 Введіть розмір:");
-      return;
-    }
+bot.on("text", async (ctx) => {
+  const data = userOrderData[ctx.from.id];
+  if (!data || data.completed) return;
 
-    if (!data.size) {
-      data.size = ctx2.message.text;
-      await ctx2.reply("🧵 Введіть тканину:");
-      return;
-    }
+  if (data.step === 1) {
+    data.product = ctx.message.text;
+    data.step++;
+    await ctx.reply("📏 Введіть розмір:");
+  } else if (data.step === 2) {
+    data.size = ctx.message.text;
+    data.step++;
+    await ctx.reply("🧵 Введіть тканину:");
+  } else if (data.step === 3) {
+    data.material = ctx.message.text;
+    data.step++;
+    await ctx.reply("💳 Введіть тип оплати:");
+  } else if (data.step === 4) {
+    data.payment = ctx.message.text;
+    data.step++;
+    await ctx.reply("📦 Введіть дані для відправки:");
+  } else if (data.step === 5) {
+    data.delivery = ctx.message.text;
+    data.step++;
+    await ctx.reply("🔗 Введіть посилання:");
+  } else if (data.step === 6) {
+    data.link = ctx.message.text;
+    data.step++;
+    await ctx.reply("💰 Введіть суму:");
+  } else if (data.step === 7) {
+    data.amount = ctx.message.text;
+    data.completed = true;
 
-    if (!data.material) {
-      data.material = ctx2.message.text;
-      await ctx2.reply("💳 Введіть тип оплати:");
-      return;
-    }
+    const summary = `✅ Перевірте замовлення:\n\nТовар: ${data.product}\nРозмір: ${data.size}\nТканина: ${data.material}\nТип оплати: ${data.payment}\nДані для відправки: ${data.delivery}\nПосилання: ${data.link}\nСума: ${data.amount}`;
 
-    if (!data.payment) {
-      data.payment = ctx2.message.text;
-      await ctx2.reply("📦 Введіть дані для відправки:");
-      return;
-    }
-
-    if (!data.delivery) {
-      data.delivery = ctx2.message.text;
-      await ctx2.reply("🔗 Введіть посилання:");
-      return;
-    }
-
-    if (!data.link) {
-      data.link = ctx2.message.text;
-      await ctx2.reply("💰 Введіть суму:");
-      return;
-    }
-
-    if (!data.amount) {
-      data.amount = ctx2.message.text;
-
-      const summary = `✅ Перевірте замовлення:\n\nТовар: ${data.product}\nРозмір: ${data.size}\nТканина: ${data.material}\nТип оплати: ${data.payment}\nДані для відправки: ${data.delivery}\nПосилання: ${data.link}\nСума: ${data.amount}`;
-
-      await ctx2.reply(summary, Markup.inlineKeyboard([
-        [Markup.button.callback("✅ Підтвердити", "confirm_order"), Markup.button.callback("❌ Скасувати", "cancel_order")]
-      ]));
-    }
-  });
+    await ctx.reply(summary, Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Підтвердити", "confirm_order"), Markup.button.callback("❌ Скасувати", "cancel_order")]
+    ]));
+  }
 });
 
 bot.action("confirm_order", async (ctx) => {
@@ -234,4 +225,49 @@ bot.action("confirm_order", async (ctx) => {
   try {
     await accessSheet();
     const monthName = new Date().toLocaleString("uk-UA", { month: "long" });
-    const sheet = doc.sheetsByTitle[monthName.charAt(0).toUpperCase() + month
+    const sheetTitle = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+    const sheet = doc.sheetsByTitle[sheetTitle];
+    if (!sheet) return ctx.reply(`Не знайдено листа "${sheetTitle}".`);
+
+    await sheet.loadHeaderRow();
+    const rows = await sheet.getRows();
+    const emptyRow = rows.find(r => !r['Товар'] || r['Товар'].toString().trim() === '');
+
+    if (!emptyRow) return ctx.reply("Немає вільного рядка для додавання.");
+
+    emptyRow['Товар'] = data.product;
+    emptyRow['Розмір'] = data.size;
+    emptyRow['Тканина'] = data.material;
+    emptyRow['Тип оплати'] = data.payment;
+    emptyRow['Дані для відправки'] = data.delivery;
+    emptyRow['Посилання'] = data.link;
+    emptyRow['Сума'] = data.amount;
+
+    await emptyRow.save();
+
+    delete userOrderData[ctx.from.id];
+    await ctx.reply("✅ Замовлення успішно додано!");
+  } catch (err) {
+    console.error(err);
+    ctx.reply("❌ Помилка при збереженні замовлення.");
+  }
+});
+
+bot.action("cancel_order", async (ctx) => {
+  ctx.answerCbQuery();
+  delete userOrderData[ctx.from.id];
+  await ctx.reply("❌ Створення замовлення скасовано.");
+});
+
+bot.launch({ dropPendingUpdates: true });
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Bot is running!");
+});
+
+app.listen(PORT, () => {
+  console.log(`Web server is listening on port ${PORT}`);
+});
