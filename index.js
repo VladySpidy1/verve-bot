@@ -19,8 +19,10 @@ async function accessSheet() {
 
 function parseDate(dateString) {
   if (!dateString || dateString.trim() === "") return null;
-  const parsed = new Date(dateString);
-  return isNaN(parsed.getTime()) ? null : parsed;
+  const parts = dateString.trim().split(".");
+  if (parts.length !== 3) return null;
+  const [day, month, year] = parts.map(Number);
+  return new Date(year, month - 1, day);
 }
 
 function isSameDate(d1, d2) {
