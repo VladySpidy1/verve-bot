@@ -8,7 +8,7 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID);
 
 async function accessSheet() {
-  const creds = JSON.parse(fs.readFileSync("./credentials/credentials.json"));
+  const creds = JSON.parse(process.env.KEY_JSON);
   await doc.useServiceAccountAuth(creds);
   await doc.loadInfo();
 }
