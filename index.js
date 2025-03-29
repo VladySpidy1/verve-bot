@@ -44,12 +44,16 @@ async function getOrders(filterFn, title) {
     const rows = await sheet.getRows();
 
     rows.forEach((row) => {
-      const status = row["Статус"]?.trim();
-      const deadline = parseDate(row["Крайня дата"]);
+      try {
+        const status = row["Статус"]?.trim();
+        const deadline = parseDate(row["Крайня дата"]);
 
-      if (status !== "Отримано" && filterFn(row, deadline)) {
-        message += `🔹 ${row["Товар"] || "-"} | ${row["Розмір"] || "-"} | ${row["Тканина"] || "-"} | ${row["Дані для відправки"] || "-"} | до ${row["Крайня дата"] || "-"} | ${row["Тип оплати"] || "-"}\n`;
-        counter++;
+        if (status !== "Отримано" && filterFn(row, deadline)) {
+          message += `🔹 ${row["Товар"] || "-"} | ${row["Розмір"] || "-"} | ${row["Тканина"] || "-"} | ${row["Дані для відправки"] || "-"} | до ${row["Крайня дата"] || "-"} | ${row["Тип оплати"] || "-"}\n`;
+          counter++;
+        }
+      } catch (err) {
+        console.error(`Помилка при обробці рядка:`, row, err);
       }
     });
   }
@@ -89,9 +93,10 @@ bot.action("tomorrow", async (ctx) => {
   try {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
 
     const msg = await getOrders(
-      (row, deadline) => deadline && isSameDate(deadline, tomorrow),
+      (row, deadline) => deadline instanceof Date && !isNaN(deadline) && isSameDate(deadline, tomorrow),
       "🚀 Замовлення на завтра:"
     );
     ctx.reply(msg);
@@ -108,7 +113,12 @@ bot.action("overdue", async (ctx) => {
     today.setHours(0, 0, 0, 0);
 
     const msg = await getOrders(
-      (row, deadline) => deadline && deadline < today,
+      (row, deadline) => {
+        if (!(deadline instanceof Date) || isNaN(deadline)) return false;
+        const d = new Date(deadline);
+        d.setHours(0, 0, 0, 0);
+        return d.getTime() < today.getTime();
+      },
       "⚠️ Прострочені замовлення:"
     );
     ctx.reply(msg);
