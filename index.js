@@ -14,6 +14,18 @@ const bot = new Telegraf(BOT_TOKEN);
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID);
 const app = express();
 
+const STATUS_OPTIONS = [
+  "Нове замовлення",
+  "Пошив",
+  "Сьогодні відправка",
+  "Відправлено",
+  "Отримано",
+  "Повернення"
+];
+
+let userOrderData = {};
+let editOrderState = {};
+
 async function accessSheet() {
   const creds = JSON.parse(KEY_JSON);
   await doc.useServiceAccountAuth(creds);
@@ -29,11 +41,7 @@ function parseDate(dateString) {
 }
 
 function isSameDate(d1, d2) {
-  return (
-    d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate()
-  );
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
 }
 
 function isRowEmpty(row) {
@@ -81,10 +89,7 @@ async function getOrders(filterFn, title) {
     }
   }
 
-  if (counter === 0) {
-    return "✅ Немає замовлень за критерієм.";
-  }
-
+  if (counter === 0) return "✅ Немає замовлень за критерієм.";
   return message;
 }
 
@@ -98,8 +103,41 @@ async function sendMenu(ctx) {
   ]));
 }
 
-let userOrderData = {};
-let editOrderState = {};
+bot.start(async (ctx) => await sendMenu(ctx));
+
+bot.action("main_menu", async (ctx) => {
+  ctx.answerCbQuery();
+  await sendMenu(ctx);
+});
+
+bot.action("all", async (ctx) => {
+  ctx.answerCbQuery();
+  const msg = await getOrders(() => true, "📄 Список всіх активних замовлень:");
+  await ctx.reply(msg);
+});
+
+bot.action("tomorrow", async (ctx) => {
+  ctx.answerCbQuery();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  const msg = await getOrders((row, deadline) => deadline && isSameDate(deadline, tomorrow), "🚀 Замовлення на завтра:");
+  await ctx.reply(msg);
+});
+
+bot.action("overdue", async (ctx) => {
+  ctx.answerCbQuery();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const msg = await getOrders((row, deadline) => deadline && isSameDate(deadline, today), "⚠️ Прострочені замовлення:");
+  await ctx.reply(msg);
+});
+
+bot.action("new_order", async (ctx) => {
+  ctx.answerCbQuery();
+  userOrderData[ctx.from.id] = { step: 1, completed: false };
+  await ctx.reply("✏️ Введіть назву товару:");
+});
 
 bot.on("text", async (ctx) => {
   const data = userOrderData[ctx.from.id];
@@ -133,55 +171,47 @@ bot.on("text", async (ctx) => {
     } else if (data.step === 7) {
       data.amount = ctx.message.text;
       data.completed = true;
-
-      const summary = `✅ Перевірте замовлення:\n\nТовар: ${data.product}\nРозмір: ${data.size}\nТканина: ${data.material}\nТип оплати: ${data.payment}\nДані для відправки: ${data.delivery}\nПосилання: ${data.link}\nСума: ${data.amount}`;
-
+      const summary = `✅ Перевірте замовлення:\n\n${formatOrder(data)}`;
       await ctx.reply(summary, Markup.inlineKeyboard([
-        [
-          Markup.button.callback("✅ Підтвердити", "confirm_order"),
-          Markup.button.callback("❌ Скасувати", "cancel_order")
-        ],
-        [
-          Markup.button.callback("🏠 Головна", "main_menu")
-        ]
+        [Markup.button.callback("✅ Підтвердити", "confirm_order"), Markup.button.callback("❌ Скасувати", "cancel_order")],
+        [Markup.button.callback("🏠 Головна", "main_menu")]
       ]));
     }
   } else if (editState && editState.step === 1) {
     editState.query = ctx.message.text;
     editState.step++;
-    await ctx.reply("✏️ Введіть новий статус замовлення:");
-  } else if (editState && editState.step === 2) {
-    editState.status = ctx.message.text;
-    editState.step++;
-    await ctx.reply("🚚 Введіть номер ТТН:");
-  } else if (editState && editState.step === 3) {
-    editState.ttn = ctx.message.text;
-
-    try {
-      await accessSheet();
-      let updated = false;
-
-      for (let i = 0; i < doc.sheetCount; i++) {
-        const sheet = doc.sheetsByIndex[i];
-        await sheet.loadHeaderRow();
-        const rows = await sheet.getRows();
-
-        for (const row of rows) {
-          if (row["Дані для відправки"] && row["Дані для відправки"].includes(editState.query)) {
-            row["Статус"] = editState.status;
-            row["ТТН"] = editState.ttn;
-            await row.save();
-            updated = true;
-          }
+    await accessSheet();
+    let foundRow = null;
+    for (let i = 0; i < doc.sheetCount; i++) {
+      const sheet = doc.sheetsByIndex[i];
+      await sheet.loadHeaderRow();
+      const rows = await sheet.getRows();
+      for (const row of rows) {
+        if (row["Дані для відправки"]?.includes(editState.query)) {
+          foundRow = row;
+          break;
         }
       }
-
+      if (foundRow) break;
+    }
+    if (!foundRow) {
       delete editOrderState[ctx.from.id];
-      if (updated) {
-        await ctx.reply("✅ Замовлення успішно оновлено!");
-      } else {
-        await ctx.reply("❌ Замовлення не знайдено.");
-      }
+      return ctx.reply("❌ Замовлення не знайдено.");
+    }
+    editState.row = foundRow;
+    await ctx.reply(`${formatOrder(foundRow)}\n\nОберіть новий статус:`, Markup.inlineKeyboard(
+      STATUS_OPTIONS.map(s => [Markup.button.callback(s, `set_status:${s}`)])
+    ));
+  } else if (editState && editState.step === 3) {
+    editState.ttn = ctx.message.text;
+    try {
+      editState.row["Статус"] = editState.status;
+      editState.row["ТТН"] = editState.ttn;
+      await editState.row.save();
+      delete editOrderState[ctx.from.id];
+      await ctx.reply("✅ Замовлення успішно оновлено!", Markup.inlineKeyboard([
+        [Markup.button.callback("🏠 Головна", "main_menu")]
+      ]));
     } catch (err) {
       console.error(err);
       await ctx.reply("❌ Помилка при оновленні замовлення.");
@@ -197,80 +227,20 @@ bot.action("edit_order", async (ctx) => {
   await ctx.reply("🔍 Введіть номер телефону або текст для пошуку замовлення:");
 });
 
-bot.action("all", async (ctx) => {
-  ctx.answerCbQuery();
-  try {
-    const msg = await getOrders(() => true, "📄 Список всіх активних замовлень:");
-    await ctx.reply(msg);
-  } catch (err) {
-    console.error(err);
-    ctx.reply("Сталася помилка при отриманні замовлень.");
-  }
-});
-
-bot.action("tomorrow", async (ctx) => {
-  ctx.answerCbQuery();
-  try {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(0, 0, 0, 0);
-
-    const msg = await getOrders(
-      (row, deadline) => deadline instanceof Date && !isNaN(deadline) && isSameDate(deadline, tomorrow),
-      "🚀 Замовлення на завтра:"
-    );
-    await ctx.reply(msg);
-  } catch (err) {
-    console.error(err);
-    ctx.reply("Сталася помилка при отриманні завтрашніх замовлень.");
-  }
-});
-
-bot.action("overdue", async (ctx) => {
-  ctx.answerCbQuery();
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const msg = await getOrders(
-      (row, deadline) => {
-        if (!(deadline instanceof Date) || isNaN(deadline)) return false;
-        const d = new Date(deadline);
-        d.setHours(0, 0, 0, 0);
-        return isSameDate(d, today);
-      },
-      "⚠️ Прострочені замовлення:"
-    );
-    await ctx.reply(msg);
-  } catch (err) {
-    console.error(err);
-    ctx.reply("Сталася помилка при отриманні прострочених замовлень.");
-  }
-});
-
-bot.action("new_order", async (ctx) => {
-  ctx.answerCbQuery();
-  userOrderData[ctx.from.id] = { step: 1, completed: false };
-  await ctx.reply("✏️ Введіть назву товару:");
-});
-
 bot.action("confirm_order", async (ctx) => {
   ctx.answerCbQuery();
   const data = userOrderData[ctx.from.id];
   if (!data) return ctx.reply("Дані замовлення не знайдено.");
-
   try {
     await accessSheet();
     const monthName = new Date().toLocaleString("uk-UA", { month: "long" });
     const sheetTitle = monthName.charAt(0).toUpperCase() + monthName.slice(1);
     const sheet = doc.sheetsByTitle[sheetTitle];
     if (!sheet) return ctx.reply(`Не знайдено листа "${sheetTitle}".`);
-
     const today = new Date();
     const deadline = new Date(today);
     deadline.setDate(today.getDate() + 5);
     const diffDays = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
-
     await sheet.addRow({
       "Товар": data.product,
       "Розмір": data.size,
@@ -284,7 +254,6 @@ bot.action("confirm_order", async (ctx) => {
       "Залишилось днів": diffDays,
       "Статус": "Нове замовлення"
     });
-
     delete userOrderData[ctx.from.id];
     await ctx.reply("✅ Замовлення успішно додано!");
   } catch (err) {
@@ -299,12 +268,15 @@ bot.action("cancel_order", async (ctx) => {
   await ctx.reply("❌ Створення замовлення скасовано.");
 });
 
-bot.action("main_menu", async (ctx) => {
+bot.action(/set_status:(.+)/, async (ctx) => {
   ctx.answerCbQuery();
-  await sendMenu(ctx);
+  const editState = editOrderState[ctx.from.id];
+  if (!editState || !editState.row) return;
+  editState.status = ctx.match[1];
+  editState.step = 3;
+  await ctx.reply("🚚 Введіть номер ТТН:");
 });
 
-// === ТІЛЬКИ Webhook (без polling) ===
 bot.telegram.setWebhook(`${DOMAIN}/bot${BOT_TOKEN}`);
 app.use(bot.webhookCallback(`/bot${BOT_TOKEN}`));
 
@@ -314,6 +286,5 @@ app.listen(PORT, () => {
   console.log(`✅ Webhook активовано на порту ${PORT}`);
 });
 
-// === graceful stop ===
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
