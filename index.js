@@ -259,15 +259,35 @@ bot.action("cancel_order", async (ctx) => {
   await ctx.reply("❌ Створення замовлення скасовано.");
 });
 
-bot.launch({ dropPendingUpdates: true });
+// Підключаємо залежності та конфігурацію
+require("dotenv").config();
+const { Telegraf, Markup } = require("telegraf");
+const { GoogleSpreadsheet } = require("google-spreadsheet");
+const express = require("express");
 
-const app = express();
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const KEY_JSON = process.env.KEY_JSON;
+const DOMAIN = process.env.RENDER_EXTERNAL_URL;
 const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Bot is running!");
-});
+const bot = new Telegraf(BOT_TOKEN);
+const doc = new GoogleSpreadsheet(SPREADSHEET_ID);
+const app = express();
+
+// === Усі функції і логіка бота остаються без змін ===
+// ... (всё, что выше остаётся як є)
+
+// === ТІЛЬКИ Webhook (без polling) ===
+bot.telegram.setWebhook(`${DOMAIN}/bot${BOT_TOKEN}`);
+app.use(bot.webhookCallback(`/bot${BOT_TOKEN}`));
+
+app.get("/", (req, res) => res.send("🤖 VERVE бот працює через Webhook!"));
 
 app.listen(PORT, () => {
-  console.log(`Web server is listening on port ${PORT}`);
+  console.log(`✅ Webhook активовано на порту ${PORT}`);
 });
+
+// === graceful stop ===
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));
