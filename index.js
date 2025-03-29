@@ -76,19 +76,28 @@ async function getOrders(filterFn, title) {
   return message;
 }
 
+async function sendMenu(ctx) {
+  await ctx.reply("👋 Вітаю! Обери дію:", Markup.inlineKeyboard([
+    [
+      Markup.button.callback("📄 Всі замовлення", "all")
+    ],
+    [
+      Markup.button.callback("🚀 Завтра відправка", "tomorrow")
+    ],
+    [
+      Markup.button.callback("⚠️ Прострочені", "overdue")
+    ],
+    [
+      Markup.button.callback("➕ Нове замовлення", "new_order")
+    ]
+  ]));
+}
+
+let userOrderData = {};
+
 bot.start(async (ctx) => {
   try {
-    await ctx.reply("👋 Вітаю! Обери дію:", Markup.inlineKeyboard([
-      [
-        Markup.button.callback("📄 Всі замовлення", "all")
-      ],
-      [
-        Markup.button.callback("🚀 Завтра відправка", "tomorrow")
-      ],
-      [
-        Markup.button.callback("⚠️ Прострочені", "overdue")
-      ]
-    ]));
+    await sendMenu(ctx);
   } catch (err) {
     console.error(err);
   }
@@ -96,17 +105,15 @@ bot.start(async (ctx) => {
 
 bot.hears("/start", async (ctx) => {
   try {
-    await ctx.reply("👋 Вітаю! Обери дію:", Markup.inlineKeyboard([
-      [
-        Markup.button.callback("📄 Всі замовлення", "all")
-      ],
-      [
-        Markup.button.callback("🚀 Завтра відправка", "tomorrow")
-      ],
-      [
-        Markup.button.callback("⚠️ Прострочені", "overdue")
-      ]
-    ]));
+    await sendMenu(ctx);
+  } catch (err) {
+    console.error(err);
+  }
+});
+
+bot.on("message", async (ctx) => {
+  try {
+    await sendMenu(ctx);
   } catch (err) {
     console.error(err);
   }
@@ -163,18 +170,68 @@ bot.action("overdue", async (ctx) => {
   }
 });
 
-bot.launch({
-  dropPendingUpdates: true
-});
-console.log("Bot launched!");
+bot.action("new_order", async (ctx) => {
+  ctx.answerCbQuery();
+  userOrderData[ctx.from.id] = {};
+  await ctx.reply("✏️ Введіть назву товару:");
+  bot.on("text", async (ctx2) => {
+    const data = userOrderData[ctx2.from.id];
+    if (!data) return;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+    if (!data.product) {
+      data.product = ctx2.message.text;
+      await ctx2.reply("📏 Введіть розмір:");
+      return;
+    }
 
-app.get("/", (req, res) => {
-  res.send("Bot is running!");
+    if (!data.size) {
+      data.size = ctx2.message.text;
+      await ctx2.reply("🧵 Введіть тканину:");
+      return;
+    }
+
+    if (!data.material) {
+      data.material = ctx2.message.text;
+      await ctx2.reply("💳 Введіть тип оплати:");
+      return;
+    }
+
+    if (!data.payment) {
+      data.payment = ctx2.message.text;
+      await ctx2.reply("📦 Введіть дані для відправки:");
+      return;
+    }
+
+    if (!data.delivery) {
+      data.delivery = ctx2.message.text;
+      await ctx2.reply("🔗 Введіть посилання:");
+      return;
+    }
+
+    if (!data.link) {
+      data.link = ctx2.message.text;
+      await ctx2.reply("💰 Введіть суму:");
+      return;
+    }
+
+    if (!data.amount) {
+      data.amount = ctx2.message.text;
+
+      const summary = `✅ Перевірте замовлення:\n\nТовар: ${data.product}\nРозмір: ${data.size}\nТканина: ${data.material}\nТип оплати: ${data.payment}\nДані для відправки: ${data.delivery}\nПосилання: ${data.link}\nСума: ${data.amount}`;
+
+      await ctx2.reply(summary, Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Підтвердити", "confirm_order"), Markup.button.callback("❌ Скасувати", "cancel_order")]
+      ]));
+    }
+  });
 });
 
-app.listen(PORT, () => {
-  console.log(`Web server is listening on port ${PORT}`);
-});
+bot.action("confirm_order", async (ctx) => {
+  ctx.answerCbQuery();
+  const data = userOrderData[ctx.from.id];
+  if (!data) return ctx.reply("Дані замовлення не знайдено.");
+
+  try {
+    await accessSheet();
+    const monthName = new Date().toLocaleString("uk-UA", { month: "long" });
+    const sheet = doc.sheetsByTitle[monthName.charAt(0).toUpperCase() + month
