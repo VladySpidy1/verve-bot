@@ -39,6 +39,11 @@ function sendLongMessage(ctx, text) {
   return Promise.all(chunks.map(chunk => ctx.reply(chunk)));
 }
 
+function isRowEmpty(row) {
+  const keysToCheck = ["Товар", "Дані для відправки"];
+  return keysToCheck.every(key => !row[key] || row[key].toString().trim() === "");
+}
+
 async function getOrders(filterFn, title) {
   await accessSheet();
   let message = `${title}\n\n`;
@@ -54,7 +59,7 @@ async function getOrders(filterFn, title) {
         const status = row["Статус"]?.trim();
         const deadline = parseDate(row["Крайня дата"]);
 
-        if (status !== "Отримано" && filterFn(row, deadline)) {
+        if (!isRowEmpty(row) && status !== "Отримано" && filterFn(row, deadline)) {
           message += `🔹 ${row["Товар"] || "-"} | ${row["Розмір"] || "-"} | ${row["Тканина"] || "-"} | ${row["Дані для відправки"] || "-"} | до ${row["Крайня дата"] || "-"} | ${row["Тип оплати"] || "-"}\n`;
           counter++;
         }
@@ -72,6 +77,24 @@ async function getOrders(filterFn, title) {
 }
 
 bot.start(async (ctx) => {
+  try {
+    await ctx.reply("👋 Вітаю! Обери дію:", Markup.inlineKeyboard([
+      [
+        Markup.button.callback("📄 Всі замовлення", "all")
+      ],
+      [
+        Markup.button.callback("🚀 Завтра відправка", "tomorrow")
+      ],
+      [
+        Markup.button.callback("⚠️ Прострочені", "overdue")
+      ]
+    ]));
+  } catch (err) {
+    console.error(err);
+  }
+});
+
+bot.hears("/start", async (ctx) => {
   try {
     await ctx.reply("👋 Вітаю! Обери дію:", Markup.inlineKeyboard([
       [
