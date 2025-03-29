@@ -275,9 +275,6 @@ const bot = new Telegraf(BOT_TOKEN);
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID);
 const app = express();
 
-// === Усі функції і логіка бота остаються без змін ===
-// ... (всё, что выше остаётся як є)
-
 // === ТІЛЬКИ Webhook (без polling) ===
 bot.telegram.setWebhook(`${DOMAIN}/bot${BOT_TOKEN}`);
 app.use(bot.webhookCallback(`/bot${BOT_TOKEN}`));
