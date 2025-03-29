@@ -98,28 +98,46 @@ async function sendMenu(ctx) {
 
 let userOrderData = {};
 
-bot.start(async (ctx) => {
-  try {
-    await sendMenu(ctx);
-  } catch (err) {
-    console.error(err);
-  }
-});
+bot.on("text", async (ctx) => {
+  const data = userOrderData[ctx.from.id];
 
-bot.hears("/start", async (ctx) => {
-  try {
-    await sendMenu(ctx);
-  } catch (err) {
-    console.error(err);
-  }
-});
+  if (data && !data.completed) {
+    if (data.step === 1) {
+      data.product = ctx.message.text;
+      data.step++;
+      await ctx.reply("📏 Введіть розмір:");
+    } else if (data.step === 2) {
+      data.size = ctx.message.text;
+      data.step++;
+      await ctx.reply("🧵 Введіть тканину:");
+    } else if (data.step === 3) {
+      data.material = ctx.message.text;
+      data.step++;
+      await ctx.reply("💳 Введіть тип оплати:");
+    } else if (data.step === 4) {
+      data.payment = ctx.message.text;
+      data.step++;
+      await ctx.reply("📦 Введіть дані для відправки:");
+    } else if (data.step === 5) {
+      data.delivery = ctx.message.text;
+      data.step++;
+      await ctx.reply("🔗 Введіть посилання:");
+    } else if (data.step === 6) {
+      data.link = ctx.message.text;
+      data.step++;
+      await ctx.reply("💰 Введіть суму:");
+    } else if (data.step === 7) {
+      data.amount = ctx.message.text;
+      data.completed = true;
 
-bot.on("message", async (ctx) => {
-  if (userOrderData[ctx.from.id] && !userOrderData[ctx.from.id].completed) return;
-  try {
+      const summary = `✅ Перевірте замовлення:\n\nТовар: ${data.product}\nРозмір: ${data.size}\nТканина: ${data.material}\nТип оплати: ${data.payment}\nДані для відправки: ${data.delivery}\nПосилання: ${data.link}\nСума: ${data.amount}`;
+
+      await ctx.reply(summary, Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Підтвердити", "confirm_order"), Markup.button.callback("❌ Скасувати", "cancel_order")]
+      ]));
+    }
+  } else {
     await sendMenu(ctx);
-  } catch (err) {
-    console.error(err);
   }
 });
 
@@ -178,46 +196,6 @@ bot.action("new_order", async (ctx) => {
   ctx.answerCbQuery();
   userOrderData[ctx.from.id] = { step: 1, completed: false };
   await ctx.reply("✏️ Введіть назву товару:");
-});
-
-bot.on("text", async (ctx) => {
-  const data = userOrderData[ctx.from.id];
-  if (!data || data.completed) return;
-
-  if (data.step === 1) {
-    data.product = ctx.message.text;
-    data.step++;
-    await ctx.reply("📏 Введіть розмір:");
-  } else if (data.step === 2) {
-    data.size = ctx.message.text;
-    data.step++;
-    await ctx.reply("🧵 Введіть тканину:");
-  } else if (data.step === 3) {
-    data.material = ctx.message.text;
-    data.step++;
-    await ctx.reply("💳 Введіть тип оплати:");
-  } else if (data.step === 4) {
-    data.payment = ctx.message.text;
-    data.step++;
-    await ctx.reply("📦 Введіть дані для відправки:");
-  } else if (data.step === 5) {
-    data.delivery = ctx.message.text;
-    data.step++;
-    await ctx.reply("🔗 Введіть посилання:");
-  } else if (data.step === 6) {
-    data.link = ctx.message.text;
-    data.step++;
-    await ctx.reply("💰 Введіть суму:");
-  } else if (data.step === 7) {
-    data.amount = ctx.message.text;
-    data.completed = true;
-
-    const summary = `✅ Перевірте замовлення:\n\nТовар: ${data.product}\nРозмір: ${data.size}\nТканина: ${data.material}\nТип оплати: ${data.payment}\nДані для відправки: ${data.delivery}\nПосилання: ${data.link}\nСума: ${data.amount}`;
-
-    await ctx.reply(summary, Markup.inlineKeyboard([
-      [Markup.button.callback("✅ Підтвердити", "confirm_order"), Markup.button.callback("❌ Скасувати", "cancel_order")]
-    ]));
-  }
 });
 
 bot.action("confirm_order", async (ctx) => {
