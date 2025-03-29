@@ -36,20 +36,28 @@ function isSameDate(d1, d2) {
   );
 }
 
-function sendLongMessage(ctx, text) {
-  const chunkSize = 4000;
-  const chunks = text.match(new RegExp(`.{1,${chunkSize}}`, "gs"));
-  return Promise.all(chunks.map(chunk => ctx.reply(chunk)));
-}
-
 function isRowEmpty(row) {
   const keysToCheck = ["Товар", "Дані для відправки"];
   return keysToCheck.every(key => !row[key] || row[key].toString().trim() === "");
 }
 
+function formatOrder(row) {
+  return `🛒 Замовлення:
+
+Товар: ${row["Товар"] || "-"}
+Розмір: ${row["Розмір"] || "-"}
+Тканина: ${row["Тканина"] || "-"}
+Тип оплати: ${row["Тип оплати"] || "-"}
+Дані для відправки: ${row["Дані для відправки"] || "-"}
+Посилання: ${row["Посилання"] || "-"}
+Сума: ${row["Сума"] || "-"}
+Крайня дата: ${row["Крайня дата"] || "-"}
+Залишилось днів: ${row["Залишилось днів"] || "-"}`;
+}
+
 async function getOrders(filterFn, title) {
   await accessSheet();
-  let message = `${title}\n\n`;
+  let message = `${title}`;
   let counter = 0;
 
   for (let i = 0; i < doc.sheetCount; i++) {
@@ -57,19 +65,19 @@ async function getOrders(filterFn, title) {
     await sheet.loadHeaderRow();
     const rows = await sheet.getRows();
 
-    rows.forEach((row) => {
+    for (const row of rows) {
       try {
         const status = row["Статус"]?.trim();
         const deadline = parseDate(row["Крайня дата"]);
 
         if (!isRowEmpty(row) && status !== "Отримано" && filterFn(row, deadline)) {
-          message += `🔹 ${row["Товар"] || "-"} | ${row["Розмір"] || "-"} | ${row["Тканина"] || "-"} | ${row["Дані для відправки"] || "-"} | до ${row["Крайня дата"] || "-"} | ${row["Тип оплати"] || "-"}\n`;
+          message += `\n\n${formatOrder(row)}`;
           counter++;
         }
       } catch (err) {
         console.error(`Помилка при обробці рядка:`, row, err);
       }
-    });
+    }
   }
 
   if (counter === 0) {
@@ -145,7 +153,7 @@ bot.action("all", async (ctx) => {
   ctx.answerCbQuery();
   try {
     const msg = await getOrders(() => true, "📄 Список всіх активних замовлень:");
-    await sendLongMessage(ctx, msg);
+    await ctx.reply(msg);
   } catch (err) {
     console.error(err);
     ctx.reply("Сталася помилка при отриманні замовлень.");
@@ -163,7 +171,7 @@ bot.action("tomorrow", async (ctx) => {
       (row, deadline) => deadline instanceof Date && !isNaN(deadline) && isSameDate(deadline, tomorrow),
       "🚀 Замовлення на завтра:"
     );
-    await sendLongMessage(ctx, msg);
+    await ctx.reply(msg);
   } catch (err) {
     console.error(err);
     ctx.reply("Сталася помилка при отриманні завтрашніх замовлень.");
@@ -185,7 +193,7 @@ bot.action("overdue", async (ctx) => {
       },
       "⚠️ Прострочені замовлення:"
     );
-    await sendLongMessage(ctx, msg);
+    await ctx.reply(msg);
   } catch (err) {
     console.error(err);
     ctx.reply("Сталася помилка при отриманні прострочених замовлень.");
@@ -216,6 +224,11 @@ bot.action("confirm_order", async (ctx) => {
 
     if (!emptyRow) return ctx.reply("Немає вільного рядка для додавання.");
 
+    const today = new Date();
+    const deadline = new Date(today);
+    deadline.setDate(deadline.getDate() + 5);
+    const diffDays = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
+
     emptyRow['Товар'] = data.product;
     emptyRow['Розмір'] = data.size;
     emptyRow['Тканина'] = data.material;
@@ -223,6 +236,10 @@ bot.action("confirm_order", async (ctx) => {
     emptyRow['Дані для відправки'] = data.delivery;
     emptyRow['Посилання'] = data.link;
     emptyRow['Сума'] = data.amount;
+    emptyRow['Дата оформлення'] = today.toLocaleDateString("uk-UA");
+    emptyRow['Крайня дата'] = deadline.toLocaleDateString("uk-UA");
+    emptyRow['Залишилось днів'] = diffDays;
+    emptyRow['Статус'] = 'Нове замовлення';
 
     await emptyRow.save();
 
