@@ -33,6 +33,12 @@ function isSameDate(d1, d2) {
   );
 }
 
+function sendLongMessage(ctx, text) {
+  const chunkSize = 4000;
+  const chunks = text.match(new RegExp(`.{1,${chunkSize}}`, "gs"));
+  return Promise.all(chunks.map(chunk => ctx.reply(chunk)));
+}
+
 async function getOrders(filterFn, title) {
   await accessSheet();
   let message = `${title}\n\n`;
@@ -67,10 +73,16 @@ async function getOrders(filterFn, title) {
 
 bot.start(async (ctx) => {
   try {
-    await ctx.reply("Вибери дію:", Markup.inlineKeyboard([
-      [Markup.button.callback("📄 Всі замовлення", "all")],
-      [Markup.button.callback("🚀 Завтра відправка", "tomorrow")],
-      [Markup.button.callback("⚠️ Прострочені", "overdue")]
+    await ctx.reply("👋 Вітаю! Обери дію:", Markup.inlineKeyboard([
+      [
+        Markup.button.callback("📄 Всі замовлення", "all")
+      ],
+      [
+        Markup.button.callback("🚀 Завтра відправка", "tomorrow")
+      ],
+      [
+        Markup.button.callback("⚠️ Прострочені", "overdue")
+      ]
     ]));
   } catch (err) {
     console.error(err);
@@ -81,7 +93,7 @@ bot.action("all", async (ctx) => {
   ctx.answerCbQuery();
   try {
     const msg = await getOrders(() => true, "📄 Список всіх активних замовлень:");
-    ctx.reply(msg);
+    await sendLongMessage(ctx, msg);
   } catch (err) {
     console.error(err);
     ctx.reply("Сталася помилка при отриманні замовлень.");
@@ -99,7 +111,7 @@ bot.action("tomorrow", async (ctx) => {
       (row, deadline) => deadline instanceof Date && !isNaN(deadline) && isSameDate(deadline, tomorrow),
       "🚀 Замовлення на завтра:"
     );
-    ctx.reply(msg);
+    await sendLongMessage(ctx, msg);
   } catch (err) {
     console.error(err);
     ctx.reply("Сталася помилка при отриманні завтрашніх замовлень.");
@@ -121,7 +133,7 @@ bot.action("overdue", async (ctx) => {
       },
       "⚠️ Прострочені замовлення:"
     );
-    ctx.reply(msg);
+    await sendLongMessage(ctx, msg);
   } catch (err) {
     console.error(err);
     ctx.reply("Сталася помилка при отриманні прострочених замовлень.");
