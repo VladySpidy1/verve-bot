@@ -11,6 +11,21 @@ async function accessSheet() {
   const creds = JSON.parse(process.env.KEY_JSON);
   await doc.useServiceAccountAuth(creds);
   await doc.loadInfo();
+  
+const express = require("express");
+const app = express();
+
+const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send("Bot is running!");
+});
+
+app.listen(PORT, () => {
+  console.log(`Web server is listening on port ${PORT}`);
+});
+
+  
 }
 
 async function getOrders(filterFn, title) {
