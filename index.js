@@ -117,7 +117,7 @@ bot.action("overdue", async (ctx) => {
         if (!(deadline instanceof Date) || isNaN(deadline)) return false;
         const d = new Date(deadline);
         d.setHours(0, 0, 0, 0);
-        return d.getTime() < today.getTime();
+        return isSameDate(d, today);
       },
       "⚠️ Прострочені замовлення:"
     );
@@ -128,7 +128,9 @@ bot.action("overdue", async (ctx) => {
   }
 });
 
-bot.launch();
+bot.launch({
+  dropPendingUpdates: true
+});
 console.log("Bot launched!");
 
 const app = express();
