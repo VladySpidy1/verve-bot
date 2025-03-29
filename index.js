@@ -52,7 +52,8 @@ function formatOrder(row) {
 Посилання: ${row["Посилання"] || "-"}
 Сума: ${row["Сума"] || "-"}
 Крайня дата: ${row["Крайня дата"] || "-"}
-Залишилось днів: ${row["Залишилось днів"] || "-"}`;
+Залишилось днів: ${row["Залишилось днів"] || "-"}
+Статус: ${row["Статус"] || "-"}`;
 }
 
 async function getOrders(filterFn, title) {
@@ -89,25 +90,20 @@ async function getOrders(filterFn, title) {
 
 async function sendMenu(ctx) {
   await ctx.reply("👋 Вітаю! Обери дію:", Markup.inlineKeyboard([
-    [
-      Markup.button.callback("📄 Всі замовлення", "all")
-    ],
-    [
-      Markup.button.callback("🚀 Завтра відправка", "tomorrow")
-    ],
-    [
-      Markup.button.callback("⚠️ Прострочені", "overdue")
-    ],
-    [
-      Markup.button.callback("➕ Нове замовлення", "new_order")
-    ]
+    [Markup.button.callback("📄 Всі замовлення", "all")],
+    [Markup.button.callback("🚀 Завтра відправка", "tomorrow")],
+    [Markup.button.callback("⚠️ Прострочені", "overdue")],
+    [Markup.button.callback("➕ Нове замовлення", "new_order")],
+    [Markup.button.callback("✏️ Редагувати замовлення", "edit_order")]
   ]));
 }
 
 let userOrderData = {};
+let editOrderState = {};
 
 bot.on("text", async (ctx) => {
   const data = userOrderData[ctx.from.id];
+  const editState = editOrderState[ctx.from.id];
 
   if (data && !data.completed) {
     if (data.step === 1) {
@@ -141,12 +137,64 @@ bot.on("text", async (ctx) => {
       const summary = `✅ Перевірте замовлення:\n\nТовар: ${data.product}\nРозмір: ${data.size}\nТканина: ${data.material}\nТип оплати: ${data.payment}\nДані для відправки: ${data.delivery}\nПосилання: ${data.link}\nСума: ${data.amount}`;
 
       await ctx.reply(summary, Markup.inlineKeyboard([
-        [Markup.button.callback("✅ Підтвердити", "confirm_order"), Markup.button.callback("❌ Скасувати", "cancel_order")]
+        [
+          Markup.button.callback("✅ Підтвердити", "confirm_order"),
+          Markup.button.callback("❌ Скасувати", "cancel_order")
+        ],
+        [
+          Markup.button.callback("🏠 Головна", "main_menu")
+        ]
       ]));
+    }
+  } else if (editState && editState.step === 1) {
+    editState.query = ctx.message.text;
+    editState.step++;
+    await ctx.reply("✏️ Введіть новий статус замовлення:");
+  } else if (editState && editState.step === 2) {
+    editState.status = ctx.message.text;
+    editState.step++;
+    await ctx.reply("🚚 Введіть номер ТТН:");
+  } else if (editState && editState.step === 3) {
+    editState.ttn = ctx.message.text;
+
+    try {
+      await accessSheet();
+      let updated = false;
+
+      for (let i = 0; i < doc.sheetCount; i++) {
+        const sheet = doc.sheetsByIndex[i];
+        await sheet.loadHeaderRow();
+        const rows = await sheet.getRows();
+
+        for (const row of rows) {
+          if (row["Дані для відправки"] && row["Дані для відправки"].includes(editState.query)) {
+            row["Статус"] = editState.status;
+            row["ТТН"] = editState.ttn;
+            await row.save();
+            updated = true;
+          }
+        }
+      }
+
+      delete editOrderState[ctx.from.id];
+      if (updated) {
+        await ctx.reply("✅ Замовлення успішно оновлено!");
+      } else {
+        await ctx.reply("❌ Замовлення не знайдено.");
+      }
+    } catch (err) {
+      console.error(err);
+      await ctx.reply("❌ Помилка при оновленні замовлення.");
     }
   } else {
     await sendMenu(ctx);
   }
+});
+
+bot.action("edit_order", async (ctx) => {
+  ctx.answerCbQuery();
+  editOrderState[ctx.from.id] = { step: 1 };
+  await ctx.reply("🔍 Введіть номер телефону або текст для пошуку замовлення:");
 });
 
 bot.action("all", async (ctx) => {
@@ -220,7 +268,7 @@ bot.action("confirm_order", async (ctx) => {
 
     const today = new Date();
     const deadline = new Date(today);
-    deadline.setDate(deadline.getDate() + 5);
+    deadline.setDate(today.getDate() + 5);
     const diffDays = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24));
 
     await sheet.addRow({
@@ -249,6 +297,11 @@ bot.action("cancel_order", async (ctx) => {
   ctx.answerCbQuery();
   delete userOrderData[ctx.from.id];
   await ctx.reply("❌ Створення замовлення скасовано.");
+});
+
+bot.action("main_menu", async (ctx) => {
+  ctx.answerCbQuery();
+  await sendMenu(ctx);
 });
 
 // === ТІЛЬКИ Webhook (без polling) ===
