@@ -7,9 +7,12 @@ const express = require("express");
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const KEY_JSON = process.env.KEY_JSON;
+const DOMAIN = process.env.RENDER_EXTERNAL_URL;
+const PORT = process.env.PORT || 3000;
 
 const bot = new Telegraf(BOT_TOKEN);
 const doc = new GoogleSpreadsheet(SPREADSHEET_ID);
+const app = express();
 
 async function accessSheet() {
   const creds = JSON.parse(KEY_JSON);
@@ -258,22 +261,6 @@ bot.action("cancel_order", async (ctx) => {
   delete userOrderData[ctx.from.id];
   await ctx.reply("❌ Створення замовлення скасовано.");
 });
-
-// Підключаємо залежності та конфігурацію
-require("dotenv").config();
-const { Telegraf, Markup } = require("telegraf");
-const { GoogleSpreadsheet } = require("google-spreadsheet");
-const express = require("express");
-
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const KEY_JSON = process.env.KEY_JSON;
-const DOMAIN = process.env.RENDER_EXTERNAL_URL;
-const PORT = process.env.PORT || 3000;
-
-const bot = new Telegraf(BOT_TOKEN);
-const doc = new GoogleSpreadsheet(SPREADSHEET_ID);
-const app = express();
 
 // === ТІЛЬКИ Webhook (без polling) ===
 bot.telegram.setWebhook(`${DOMAIN}/bot${BOT_TOKEN}`);
